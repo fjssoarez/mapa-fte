@@ -2,56 +2,68 @@
 
 Site para registar ausências e horas dos colaboradores e calcular o FTE ativo por local. Funciona no computador e no telemóvel.
 
-- **Páginas:** GitHub Pages (gratuito)
-- **Dados e login:** Firebase (gratuito, da Google)
-
-Enquanto o Firebase não estiver configurado, o site funciona em **modo de teste**: tudo fica guardado só no navegador de quem o abre.
+- **Site:** https://fjssoarez.github.io/mapa-fte/
+- **Código:** https://github.com/fjssoarez/mapa-fte (GitHub Pages publica automaticamente o ramo `main`)
+- **Dados e login:** Firebase, projeto `fte-b7dd7` → https://console.firebase.google.com (conta fjsoarez@gmail.com)
+- **Responsáveis (acesso total):** fabio.soares@areas.com e fjsoarez@gmail.com
 
 ---
 
-## Parte 1 — Firebase (dados partilhados e login), ~10 min
+## Trabalhar no Visual Studio Code (no seu PC)
 
-1. Vá a <https://console.firebase.google.com> e entre com a conta Google.
-2. **Adicionar projeto** → nome `mapa-fte` → pode desativar o Google Analytics → Criar.
-3. **Login:** menu *Build → Authentication* → *Começar* → separador *Sign-in method* → ative **Email/Password** → Guardar.
-4. **Base de dados:** menu *Build → Firestore Database* → *Criar base de dados* → localização **europe-west** (ex.: `eur3`) → *Iniciar em modo de produção*.
-5. **Regras de segurança:** ainda no Firestore, separador **Regras** → apague o que lá está → cole todo o conteúdo do ficheiro `firestore.rules` → **Publicar**.
-   - Os emails da responsável estão na linha `isAdmin()`. Se quiser outro email, altere-o aqui **e** em `config.js`.
-6. **Ligar o site ao Firebase:** ⚙️ *Definições do projeto* → em *As suas apps* clique no ícone **</>** (Web) → nome `mapa-fte` → *Registar app*. Aparece um bloco `const firebaseConfig = { apiKey: ..., ... }`.
-   Abra `config.js` e troque `export const FIREBASE_CONFIG = null;` por:
-   ```js
-   export const FIREBASE_CONFIG = {
-     apiKey: "...",
-     authDomain: "...",
-     projectId: "...",
-     storageBucket: "...",
-     messagingSenderId: "...",
-     appId: "..."
-   };
+### Preparar o PC — uma vez só, ~15 min
+
+1. **Instalar o Git:** https://git-scm.com/download/win → instalar com as opções que vêm marcadas.
+2. **Instalar o VS Code:** https://code.visualstudio.com → instalar.
+3. **Trazer o projeto para o PC:**
+   - Abra o VS Code → `Ctrl+Shift+P` → escreva **Git: Clone** → Enter.
+   - Cole `https://github.com/fjssoarez/mapa-fte` → escolha uma pasta (ex.: Documentos) → **Abrir**.
+   - Se pedir, entre no GitHub com a conta **fjssoarez** (abre o navegador; autorize).
+4. **Extensões:** o VS Code mostra “Este repositório recomenda extensões” → **Instalar**. São duas:
+   - **Claude Code** — o assistente que faz as alterações.
+   - **Live Server** — para ver o site no PC antes de publicar.
+5. **Entrar no Claude:** clique no ícone do Claude (barra lateral ou canto superior direito) → entre com a sua conta Claude (precisa de um plano Claude Pro ou superior).
+6. **Dizer ao Git quem é** (uma vez): no terminal do VS Code (`Ctrl+'`), escreva:
    ```
-   (Estes valores não são secretos; a proteção dos dados é feita pelas regras do passo 5.)
-7. **Criar a sua conta:** *Authentication → Users → Add user* → o seu email (o mesmo de `config.js`) e uma palavra-passe.
+   git config --global user.name "Fábio Soares"
+   git config --global user.email "fjsoarez@gmail.com"
+   ```
 
-## Parte 2 — Pôr o site no GitHub, ~5 min
+### Rotina para cada alteração
 
-1. Entre em <https://github.com> → **New repository** → nome `mapa-fte` → *Public* → Create.
-2. Na página do repositório: **uploading an existing file** → arraste **todos os ficheiros desta pasta** (exceto a pasta `.git`, se a vir) → *Commit changes*.
-3. *Settings → Pages* → *Source: Deploy from a branch* → Branch **main** / **(root)** → Save.
-4. Passados 1–2 minutos o site fica em `https://<o-seu-utilizador>.github.io/mapa-fte/`.
-5. De volta ao Firebase: *Authentication → Settings → Authorized domains* → **Add domain** → `<o-seu-utilizador>.github.io`.
+1. Abra o VS Code (a pasta `mapa-fte` abre sozinha da última vez).
+2. **Atualize primeiro:** peça ao Claude *“vai buscar a versão mais recente do GitHub”* (ou clique em ⟳ Sincronizar, no fundo).
+3. **Peça a alteração ao Claude, em português**, por exemplo:
+   - *“Acrescenta um código de ausência ‘C’ para Casamento, que conta como ausência.”*
+   - *“No resumo, mostra também o total de horas noturnas por local.”*
+   - *“Muda o subtítulo para ‘Operações Lisboa’.”*
+4. **Veja antes de publicar:** clique em **Go Live** (no fundo do VS Code) → abre http://localhost:5500. Experimente no tamanho de telemóvel (F12 → ícone do telemóvel).
+5. **Publique:** diga ao Claude *“está bom, publica”*. Ele faz o commit e o push; o site atualiza em 1–2 minutos (recarregue com `Ctrl+F5`).
 
-## Parte 3 — Usar
+O ficheiro `CLAUDE.md` explica o projeto ao Claude, por isso não precisa de lhe explicar tudo de cada vez.
 
-1. Abra o site e entre com a sua conta.
+### Atenção
+
+- **Regras de segurança:** se o Claude alterar `firestore.rules`, isso **não** é publicado pelo push. Copie o ficheiro todo para Firebase → Firestore Database → **Regras** → **Publicar**.
+- **Responsáveis:** para acrescentar outro responsável, peça ao Claude — ele muda `config.js` e `firestore.rules` (e depois publique as regras como acima).
+- **Nunca** guarde ficheiros do RH ou exportações CSV dentro da pasta `mapa-fte`: o repositório é público.
+- O Live Server tem de abrir em `localhost`, não em `127.0.0.1` (senão o login dá erro de domínio).
+- Se algo correr mal depois de publicar, peça ao Claude *“desfaz a última alteração e publica”*.
+
+---
+
+## Usar o site
+
+1. Entre com o seu email e palavra-passe.
 2. **Quadro de pessoal:** cole a tabela do Excel do RH (com a linha de títulos) → Analisar → Importar. Nos meses seguintes use **Copiar quadro do mês anterior**.
 3. **Acessos:** para cada gerente, escreva o email e uma palavra-passe provisória → *Dar acesso*. Envie-lhe o link do site. Ele pode trocar a palavra-passe em “Esqueci-me da palavra-passe”.
-4. No telemóvel: abra o link no Chrome/Safari → menu → **Adicionar ao ecrã principal**. Fica com um ícone como uma app.
+4. No telemóvel: abra o link no Chrome/Safari → menu → **Adicionar ao ecrã principal**.
 
 ### Permissões
 
 | Quem | Vê | Marca ausências/horas | Quadro de pessoal | Acessos |
 |---|---|---|---|---|
-| Responsável (email em `config.js` + `firestore.rules`) | ✓ | ✓ | ✓ | ✓ |
+| Responsável (`config.js` + `firestore.rules`) | ✓ | ✓ | ✓ | ✓ |
 | Gerente | ✓ | ✓ | – | – |
 | Só consulta | ✓ | – | – | – |
 
@@ -63,4 +75,4 @@ Enquanto o Firebase não estiver configurado, o site funciona em **modo de teste
 
 ### Privacidade
 
-O código do site é público no GitHub, mas **os dados não estão no GitHub**: ficam no Firebase e só quem tem conta autorizada os consegue ler. Não coloque ficheiros do RH na pasta do site.
+O código do site é público no GitHub, mas **os dados não estão no GitHub**: ficam no Firebase e só quem tem conta autorizada os consegue ler.
