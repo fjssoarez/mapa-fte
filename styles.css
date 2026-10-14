@@ -149,6 +149,10 @@ table.grid { border-collapse: separate; border-spacing: 0; font-size: 13px; min-
 .grid td.we { background: #fafbfd }
 .grid td.cell:hover { background: #eaf1ff }
 .grid td.off { background: repeating-linear-gradient(135deg, #eef1f5 0 4px, transparent 4px 8px); cursor: not-allowed }
+.grid thead th.fer { background: #fbe3e1 }
+.grid thead th.fer span { color: #9e2a24; font-weight: 700 }
+.grid td.fer { background: #fff5f4 }
+.fer-key { display: inline-block; width: 14px; height: 14px; border-radius: 4px; background: #fbe3e1; border: 1px solid #f0b8b3 }
 .grid td.sel { background: #d7e5fd !important; box-shadow: inset 0 0 0 2px var(--focus) }
 .grid.ro td.cell { cursor: default }
 .grid .fte { position: sticky; right: 0; z-index: 2; background: var(--surface); min-width: 96px; text-align: right; padding: 6px 14px; border-left: 1px solid var(--line); white-space: nowrap }
@@ -211,6 +215,8 @@ dialog#dlg::backdrop { background: rgba(15,27,45,.45) }
 .cday b { font-size: 13px; font-weight: 600 }
 .cday.we { background: #f6f8fb }
 .cday.today b { background: var(--navy); color: #fff; border-radius: 50%; width: 22px; height: 22px; display: grid; place-items: center }
+.cday.fer { background: #fff5f4; border-color: #f0b8b3 }
+.cday.fer b { color: #9e2a24 }
 .cday:disabled { background: repeating-linear-gradient(135deg, #eef1f5 0 4px, transparent 4px 8px); color: #a3adbb; cursor: default }
 .cday .pill { min-width: 22px; height: 18px; font-size: 9.5px; padding: 0 4px }
 .hint { color: var(--muted); font-size: 13.5px; margin: 0 0 10px }
@@ -223,6 +229,10 @@ dialog#dlg::backdrop { background: rgba(15,27,45,.45) }
 .check input { width: 20px; height: 20px }
 .grid-form { display: grid; grid-template-columns: 2fr 1.4fr 1.4fr auto; gap: 12px; align-items: end }
 .grid-form .full { grid-column: 1 / -1 }
+.chips { display: flex; flex-wrap: wrap; gap: 8px }
+.chip-check { display: inline-flex; align-items: center; gap: 8px; border: 1px solid var(--line); border-radius: 999px; padding: 7px 14px; min-height: 40px; font-weight: 500; font-size: 14px; color: var(--ink); cursor: pointer }
+.chip-check:has(input:checked) { border-color: var(--navy); background: #eef3fb; box-shadow: inset 0 0 0 1px var(--navy) }
+.chip-check input { width: 18px; height: 18px; margin: 0 }
 
 /* ---------- tabelas ---------- */
 .tablewrap { overflow-x: auto }

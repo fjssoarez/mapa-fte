@@ -7,23 +7,29 @@ service cloud.firestore {
     function signedIn() { return request.auth != null && request.auth.token.email != null; }
     function email() { return request.auth.token.email.lower(); }
     function isAdmin() { return signedIn() && email() in ['fjsoarez@gmail.com', 'fabio.soares@areas.com']; }
-    function hasAccess() { return isAdmin() || (signedIn() && exists(/databases/$(database)/documents/acessos/$(email()))); }
-    function canMark() {
-      return isAdmin() || (signedIn() && exists(/databases/$(database)/documents/acessos/$(email()))
-        && get(/databases/$(database)/documents/acessos/$(email())).data.role == 'gerente');
+    function accPath() { return /databases/$(database)/documents/acessos/$(email()); }
+    function hasAcc() { return signedIn() && exists(accPath()); }
+    function acc() { return get(accPath()).data; }
+    function hasAccess() { return isAdmin() || hasAcc(); }
+    function canMark() { return isAdmin() || (hasAcc() && acc().role == 'gerente'); }
+    // Locais que a pessoa pode ver. Lista vazia (ou sem lista) = todos os locais.
+    function okLocal(cc) {
+      return isAdmin() || (hasAcc() && (acc().get('locais', []).size() == 0 || cc in acc().get('locais', [])));
     }
 
-    // Quadro de pessoal de cada mês: só a responsável altera.
+    // Quadro de pessoal de cada mês: só os responsáveis alteram.
     match /meses/{ym} {
       allow read: if hasAccess();
       allow write: if isAdmin();
     }
-    // Marcações (ausências e horas): gerentes e responsável.
+    // Marcações (ausências e horas): cada gerente só nos seus locais.
     match /marcacoes/{id} {
-      allow read: if hasAccess();
-      allow write: if canMark();
+      allow read: if hasAccess() && okLocal(resource.data.cc);
+      allow create: if canMark() && okLocal(request.resource.data.cc);
+      allow update: if canMark() && okLocal(resource.data.cc) && okLocal(request.resource.data.cc);
+      allow delete: if isAdmin();
     }
-    // Lista de quem tem acesso: só a responsável gere; cada um lê o seu.
+    // Lista de quem tem acesso: só os responsáveis gerem; cada um lê o seu.
     match /acessos/{e} {
       allow read: if isAdmin() || (signedIn() && e == email());
       allow write: if isAdmin();

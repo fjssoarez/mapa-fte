@@ -21,3 +21,8 @@ export const ADMINS = ["fjsoarez@gmail.com", "fabio.soares@areas.com"];
 
 // Subtítulo que aparece ao lado do logótipo.
 export const ORG = "Operações aeroportuárias";
+
+// Feriados municipais ou outros dias a marcar na grelha, além dos nacionais
+// (que já são calculados automaticamente, incluindo Páscoa e Corpo de Deus).
+// Formato "MM-DD". Exemplo: { data: "06-13", nome: "Santo António (Lisboa)" }
+export const FERIADOS_EXTRA = [];

@@ -64,8 +64,14 @@ O ficheiro `CLAUDE.md` explica o projeto ao Claude, por isso não precisa de lhe
 | Quem | Vê | Marca ausências/horas | Quadro de pessoal | Acessos |
 |---|---|---|---|---|
 | Responsável (`config.js` + `firestore.rules`) | ✓ | ✓ | ✓ | ✓ |
-| Gerente | ✓ | ✓ | – | – |
-| Só consulta | ✓ | – | – | – |
+| Gerente | ✓ (só os seus locais) | ✓ (só os seus locais) | – | – |
+| Só consulta | ✓ (só os seus locais) | – | – | – |
+
+Os locais de cada pessoa escolhem-se no separador **Acessos** (nenhum escolhido = todos).
+
+### Feriados
+
+Os feriados nacionais aparecem automaticamente na grelha (a vermelho claro). Para acrescentar feriados municipais, peça ao Claude para os pôr em `FERIADOS_EXTRA` no `config.js` (ex.: Santo António em Lisboa, São João no Porto). Ao registar férias num período, os dias de descanso (D) e os feriados não são contados.
 
 ### Cálculo
 

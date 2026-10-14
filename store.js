@@ -36,7 +36,7 @@ function localStore() {
 
   return {
     mode: "local",
-    onUser(cb) { queueMicrotask(() => cb({ email: "Modo local", role: "admin", local: true })); },
+    onUser(cb) { queueMicrotask(() => cb({ email: "Modo local", role: "admin", locais: [], local: true })); },
     async signIn() {}, async signOut() {}, async resetPassword() {},
     watchMonth(ym, cb) { return watch(MK(ym), () => cb(read(MK(ym)))); },
     watchMarks(ym, cb) { return watch(KK(ym), () => cb(read(KK(ym)) || {})); },
@@ -44,7 +44,12 @@ function localStore() {
     async getMarks(ym) { return read(KK(ym)) || {}; },
     async setMonth(ym, data) { write(MK(ym), data); },
     async deleteMonth(ym) { write(KK(ym), null); write(MK(ym), null); },
-    async setMark(ym, k, rec) { const all = read(KK(ym)) || {}; all[k] = { m: ym, k, cc: rec.cc || "", d: rec.d || {} }; write(KK(ym), all); },
+    async setDays(ym, k, cc, changes) {
+      const all = read(KK(ym)) || {}, rec = all[k] || { m: ym, k, d: {} };
+      const d = Object.assign({}, rec.d);
+      for (const day in changes) { if (changes[day] == null) delete d[day]; else d[day] = changes[day]; }
+      all[k] = { m: ym, k, cc: cc || "", d }; write(KK(ym), all);
+    },
     async setMarks(ym, recs) { const all = read(KK(ym)) || {}; for (const r of recs) all[r.k] = { m: ym, k: r.k, cc: r.cc || "", d: r.d || {} }; write(KK(ym), all); },
     watchAccess(cb) { cb([]); return () => {}; },
     async setAccess() {}, async deleteAccess() {}, async createUser() {}
@@ -63,12 +68,21 @@ async function firebaseStore() {
   catch (e) { db = fs.getFirestore(app); }
 
   const marksQ = ym => fs.query(fs.collection(db, "marcacoes"), fs.where("m", "==", ym));
+  // Gerentes com locais restritos só podem consultar os seus locais: uma consulta por local
+  // (as regras do Firestore recusam consultas que possam devolver outros locais).
+  const marksQs = (ym, locais) => locais && locais.length
+    ? locais.map(cc => fs.query(fs.collection(db, "marcacoes"), fs.where("m", "==", ym), fs.where("cc", "==", cc)))
+    : [marksQ(ym)];
   const toMap = snap => { const map = {}; snap.forEach(d => { const v = d.data(); if (v && v.k != null) map[v.k] = v; }); return map; };
-  async function roleFor(email) {
+  async function accessFor(email) {
     email = String(email || "").toLowerCase();
-    if (admins.includes(email)) return "admin";
-    try { const s = await fs.getDoc(fs.doc(db, "acessos", email)); return s.exists() ? (s.data().role || "leitura") : null; }
-    catch (e) { return null; }
+    if (admins.includes(email)) return { role: "admin", locais: [] };
+    try {
+      const s = await fs.getDoc(fs.doc(db, "acessos", email));
+      if (!s.exists()) return { role: null, locais: [] };
+      const v = s.data();
+      return { role: v.role || "leitura", locais: Array.isArray(v.locais) ? v.locais : [] };
+    } catch (e) { return { role: null, locais: [] }; }
   }
   async function commitInChunks(ops) {
     for (let i = 0; i < ops.length; i += 400) {
@@ -80,24 +94,39 @@ async function firebaseStore() {
 
   return {
     mode: "firebase",
-    onUser(cb) { authM.onAuthStateChanged(auth, async u => cb(u ? { email: u.email, role: await roleFor(u.email) } : null)); },
+    onUser(cb) { authM.onAuthStateChanged(auth, async u => cb(u ? Object.assign({ email: u.email }, await accessFor(u.email)) : null)); },
     signIn: (email, pw) => authM.signInWithEmailAndPassword(auth, email.trim(), pw),
     signOut: () => authM.signOut(auth),
     resetPassword: email => authM.sendPasswordResetEmail(auth, email.trim()),
     watchMonth(ym, cb, err) { return fs.onSnapshot(fs.doc(db, "meses", ym), s => cb(s.exists() ? s.data() : null), err); },
-    watchMarks(ym, cb, err) { return fs.onSnapshot(marksQ(ym), snap => cb(toMap(snap)), err); },
+    watchMarks(ym, cb, err, locais) {
+      const qs = marksQs(ym, locais), parts = new Array(qs.length);
+      let ready = 0;
+      const unsubs = qs.map((q, i) => fs.onSnapshot(q, snap => {
+        if (parts[i] === undefined) ready++;
+        parts[i] = toMap(snap);
+        if (ready === qs.length) cb(Object.assign({}, ...parts));
+      }, err));
+      return () => unsubs.forEach(u => u());
+    },
     async getMonth(ym) { const s = await fs.getDoc(fs.doc(db, "meses", ym)); return s.exists() ? s.data() : null; },
-    async getMarks(ym) { return toMap(await fs.getDocs(marksQ(ym))); },
+    async getMarks(ym, locais) { return Object.assign({}, ...(await Promise.all(marksQs(ym, locais).map(q => fs.getDocs(q)))).map(toMap)); },
     setMonth: (ym, data) => fs.setDoc(fs.doc(db, "meses", ym), data),
     async deleteMonth(ym) {
       const snap = await fs.getDocs(marksQ(ym));
       await commitInChunks(snap.docs.map(d => b => b.delete(d.ref)));
       await fs.deleteDoc(fs.doc(db, "meses", ym));
     },
-    setMark: (ym, k, rec) => fs.setDoc(fs.doc(db, "marcacoes", markId(ym, k)), { m: ym, k, cc: rec.cc || "", d: rec.d || {} }),
+    // Grava só os dias alterados (o resto do documento fica intacto), para dois gerentes
+    // poderem mexer na mesma pessoa ao mesmo tempo sem apagarem o trabalho um do outro.
+    setDays(ym, k, cc, changes) {
+      const d = {}, fields = ["m", "k", "cc"];
+      for (const day in changes) { d[day] = changes[day] == null ? fs.deleteField() : changes[day]; fields.push("d." + day); }
+      return fs.setDoc(fs.doc(db, "marcacoes", markId(ym, k)), { m: ym, k, cc: cc || "", d }, { mergeFields: fields });
+    },
     setMarks: (ym, recs) => commitInChunks(recs.map(r => b => b.set(fs.doc(db, "marcacoes", markId(ym, r.k)), { m: ym, k: r.k, cc: r.cc || "", d: r.d || {} }))),
     watchAccess(cb, err) { return fs.onSnapshot(fs.collection(db, "acessos"), snap => cb(snap.docs.map(d => Object.assign({ email: d.id }, d.data()))), err); },
-    setAccess: (email, role) => fs.setDoc(fs.doc(db, "acessos", email.trim().toLowerCase()), { role, atualizadoEm: new Date().toISOString() }),
+    setAccess: (email, fields) => fs.setDoc(fs.doc(db, "acessos", email.trim().toLowerCase()), Object.assign({}, fields, { atualizadoEm: new Date().toISOString() }), { merge: true }),
     deleteAccess: email => fs.deleteDoc(fs.doc(db, "acessos", email)),
     // Cria a conta numa instância à parte, para a responsável não perder a própria sessão.
     async createUser(email, pw) {

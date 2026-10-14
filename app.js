@@ -1,5 +1,5 @@
 import { createStore, keySafe } from "./store.js";
-import { ORG } from "./config.js";
+import { ORG, FERIADOS_EXTRA } from "./config.js";
 
 // ======================================================= constantes
 const CODES = [
@@ -55,6 +55,25 @@ function activeRange(p, ym) {
   const b = p.sai && p.sai < last ? Number(p.sai.slice(8, 10)) : n;
   return b >= a ? [a, b] : null;
 }
+// feriados nacionais (Portugal) + FERIADOS_EXTRA de config.js
+const FIXOS = [["01-01", "Ano Novo"], ["04-25", "Dia da Liberdade"], ["05-01", "Dia do Trabalhador"], ["06-10", "Dia de Portugal"],
+  ["08-15", "Assunção de Nossa Senhora"], ["10-05", "Implantação da República"], ["11-01", "Dia de Todos os Santos"],
+  ["12-01", "Restauração da Independência"], ["12-08", "Imaculada Conceição"], ["12-25", "Natal"]];
+function easter(y) {
+  const a = y % 19, b = Math.floor(y / 100), c = y % 100, d = Math.floor(b / 4), e = b % 4, f = Math.floor((b + 8) / 25), g = Math.floor((b - f + 1) / 3);
+  const h = (19 * a + b - d - g + 15) % 30, i = Math.floor(c / 4), k = c % 4, l = (32 + 2 * e + 2 * i - h - k) % 7, m = Math.floor((a + 11 * h + 22 * l) / 451);
+  return new Date(y, Math.floor((h + l - 7 * m + 114) / 31) - 1, ((h + l - 7 * m + 114) % 31) + 1);
+}
+const holCache = {};
+function feriados(y) {
+  if (holCache[y]) return holCache[y];
+  const map = Object.fromEntries(FIXOS), e = easter(y);
+  const add = (off, name) => { const d = new Date(e); d.setDate(d.getDate() + off); map[pad(d.getMonth() + 1) + "-" + pad(d.getDate())] = name; };
+  add(-2, "Sexta-feira Santa"); add(0, "Páscoa"); add(60, "Corpo de Deus");
+  for (const x of FERIADOS_EXTRA || []) if (x && x.data) map[x.data] = x.nome || "Feriado";
+  return holCache[y] = map;
+}
+const feriado = (ym, day) => feriados(ymParts(ym)[0])[ym.slice(5) + "-" + pad(day)] || "";
 function daysLabel(days) {
   const mn = MESES[ymParts(S.ym)[1] - 1].toLowerCase();
   if (days.length === 1) return `${WDN[wdOf(S.ym, days[0])]}, ${days[0]} de ${mn}`;
@@ -137,11 +156,13 @@ const S = {
 try { S.tab = localStorage.getItem("fte.tab") || "mapa"; S.cc = localStorage.getItem("fte.cc") || ""; } catch (e) {}
 const canWrite = () => !!S.user && (S.user.role === "admin" || S.user.role === "gerente");
 const canAdmin = () => !!S.user && S.user.role === "admin";
-const ccOk = p => !S.cc || p.cc === S.cc;
+// Locais a que o utilizador está limitado (null = todos)
+const mine = () => S.user && S.user.role !== "admin" && S.user.locais && S.user.locais.length ? S.user.locais : null;
+const inScope = p => (!mine() || mine().includes(p.cc)) && (!S.cc || p.cc === S.cc);
 function visibleStaff(useQ = true) {
   if (!S.staff) return [];
   const q = useQ ? S.q.trim().toLowerCase() : "";
-  return S.staff.filter(p => ccOk(p) && (!q || (p.nome || "").toLowerCase().includes(q) || String(p.n || "").toLowerCase().includes(q)));
+  return S.staff.filter(p => inScope(p) && (!q || (p.nome || "").toLowerCase().includes(q) || String(p.n || "").toLowerCase().includes(q)));
 }
 const staffBy = k => (S.staff || []).find(p => p.k === k);
 const marksD = k => (S.marks[k] && S.marks[k].d) || {};
@@ -194,23 +215,27 @@ function setSave() {
   else txt = "Tudo guardado";
   el.className = "save " + cls; el.lastElementChild.textContent = txt; el.title = txt;
 }
-function queueSave(k) {
-  S.pending[k] = Object.assign({}, S.marks[k]);
-  clearTimeout(S.timers[k]);
-  S.timers[k] = setTimeout(() => flush(k), 400);
+// Alterações por gravar, por "mês|pessoa": só os dias mexidos (null = apagar o dia).
+const pkey = (ym, k) => ym + "|" + k;
+function queueSave(k, changes) {
+  const rec = S.marks[k], key = pkey(rec.m, k);
+  const job = S.pending[key] || (S.pending[key] = { m: rec.m, k, cc: rec.cc, days: {} });
+  Object.assign(job.days, changes); job.cc = rec.cc;
+  clearTimeout(S.timers[key]);
+  S.timers[key] = setTimeout(() => flush(key), 400);
   setSave();
 }
-async function flush(k) {
-  if (S.inflight[k]) return;
-  S.inflight[k] = true; setSave();
+async function flush(key) {
+  if (S.inflight[key]) return;
+  S.inflight[key] = true; setSave();
   try {
-    while (S.pending[k]) {
-      const rec = S.pending[k]; S.pending[k] = null;
-      await S.store.setMark(rec.m, k, rec);
+    while (S.pending[key]) {
+      const job = S.pending[key]; S.pending[key] = null;
+      await S.store.setDays(job.m, job.k, job.cc, job.days);
     }
     S.lastSaved = new Date(); S.saveErr = false;
   } catch (e) { S.saveErr = true; toast("Não foi possível guardar: " + errMsg(e)); }
-  finally { S.inflight[k] = false; setSave(); }
+  finally { S.inflight[key] = false; setSave(); }
 }
 addEventListener("beforeunload", e => {
   if (Object.values(S.pending).some(Boolean) || Object.values(S.inflight).some(Boolean)) { e.preventDefault(); e.returnValue = ""; }
@@ -219,10 +244,13 @@ addEventListener("beforeunload", e => {
 function applyDays(k, days, fn) {
   const p = staffBy(k);
   const rec = S.marks[k] || { m: S.ym, k, cc: p ? p.cc : "", d: {} };
-  const d = Object.assign({}, rec.d);
-  for (const day of days) { const v = fn(entry(d[day])); if (isEmpty(v)) delete d[day]; else d[day] = v; }
+  const d = Object.assign({}, rec.d), changes = {};
+  for (const day of days) {
+    const v = fn(entry(d[day]));
+    if (isEmpty(v)) { delete d[day]; changes[day] = null; } else { d[day] = v; changes[day] = v; }
+  }
   S.marks[k] = { m: S.ym, k, cc: p ? p.cc || "" : "", d };
-  queueSave(k);
+  queueSave(k, changes);
   renderView();
 }
 
@@ -239,7 +267,8 @@ function route() {
   if (!u.role) { $("naemail").textContent = u.email; show("noaccess"); return; }
   show("main");
   $("usrinit").textContent = (u.local ? "L" : (u.email || "?")[0]);
-  $("usremail").textContent = u.email; $("usrrole").textContent = u.local ? "Os dados ficam só neste navegador" : ROLE[u.role] || u.role;
+  $("usremail").textContent = u.email;
+  $("usrrole").textContent = u.local ? "Os dados ficam só neste navegador" : (ROLE[u.role] || u.role) + (mine() ? " · " + mine().join(", ") : "");
   $("logout").hidden = !!u.local;
   document.querySelectorAll("[data-admin]").forEach(b => b.hidden = !canAdmin() || (b.hasAttribute("data-fb") && S.store.mode !== "firebase"));
   const allowed = [...document.querySelectorAll(".tabs button")].filter(b => !b.hidden).map(b => b.dataset.tab);
@@ -292,13 +321,14 @@ function subscribe() {
   }, onSubErr));
   S.unsub.push(S.store.watchMarks(ym, map => {
     if (ym !== S.ym) return;
-    for (const k in S.marks) if ((S.pending[k] && S.pending[k].m === ym) || S.inflight[k]) map[k] = S.marks[k];
+    for (const k in S.marks) if (S.pending[pkey(ym, k)] || S.inflight[pkey(ym, k)]) map[k] = S.marks[k];
     S.marks = map;
     if (drag || dlg.open) S.needRender = true; else renderView();
-  }, onSubErr));
+  }, onSubErr, mine()));
 }
 function fillCC() {
-  const ccs = [...new Set((S.staff || []).map(p => p.cc).filter(Boolean))].sort((a, b) => a.localeCompare(b, "pt"));
+  const ccs = [...new Set((S.staff || []).map(p => p.cc).filter(c => c && (!mine() || mine().includes(c))))].sort((a, b) => a.localeCompare(b, "pt"));
+  if (mine() && S.cc && !mine().includes(S.cc)) S.cc = "";
   if (S.cc && !ccs.includes(S.cc)) ccs.push(S.cc);
   $("cc").innerHTML = '<option value="">Todos os locais</option>' + ccs.map(c => `<option${c === S.cc ? " selected" : ""}>${esc(c)}</option>`).join("");
 }
@@ -350,8 +380,9 @@ function renderMapa() {
   if (S.staff === null) { el.innerHTML = '<div class="card empty">A carregar…</div>'; return; }
   if (!S.staff.length) { el.innerHTML = emptyMonthHtml(); return; }
   const list = visibleStaff();
-  const { T } = aggregate(S.staff.filter(ccOk), S.ym, S.marks);
-  const legend = CODES.filter(x => !x.notAus).slice(0, 5).map(x => `<span><span class="pill k-${x.c}">${x.c}</span>${esc(x.name)}</span>`).join("");
+  const { T } = aggregate(S.staff.filter(inScope), S.ym, S.marks);
+  const legend = CODES.filter(x => !x.notAus).slice(0, 5).map(x => `<span><span class="pill k-${x.c}">${x.c}</span>${esc(x.name)}</span>`).join("") +
+    '<span><span class="fer-key" aria-hidden="true"></span>Feriado</span>';
   const old = $("gridwrap"), sx = old ? old.scrollLeft : null, sy = old ? old.scrollTop : 0;
   el.innerHTML = kpisHtml(T) + `<div class="card"><div class="card-head"><div><h3>Equipa e marcações</h3><p>${list.length} ${list.length === 1 ? "colaborador visível" : "colaboradores visíveis"}</p></div><div class="legend">${legend}</div></div>` +
     (list.length ? (mobile.matches ? listHtml(list) : gridHtml(list)) : '<div class="empty">Ninguém corresponde à pesquisa.</div>') + "</div>";
@@ -364,7 +395,10 @@ function renderMapa() {
 function gridHtml(list) {
   const n = dim(S.ym), t = todayIso(), tday = t.slice(0, 7) === S.ym ? Number(t.slice(8)) : 0;
   let h = `<div class="gridwrap" id="gridwrap"><table class="grid${canWrite() ? "" : " ro"}"><thead><tr><th class="name">Colaborador</th>`;
-  for (let d = 1; d <= n; d++) { const wd = wdOf(S.ym, d); h += `<th class="day${wd === 0 || wd === 6 ? " we" : ""}${d === tday ? " today" : ""}"><span>${WD[wd]}</span><b>${d}</b></th>`; }
+  for (let d = 1; d <= n; d++) {
+    const wd = wdOf(S.ym, d), fer = feriado(S.ym, d);
+    h += `<th class="day${wd === 0 || wd === 6 ? " we" : ""}${fer ? " fer" : ""}${d === tday ? " today" : ""}"${fer ? ` title="Feriado: ${esc(fer)}"` : ""}><span>${fer ? "Fer" : WD[wd]}</span><b>${d}</b></th>`;
+  }
   h += `<th class="fte">FTE ativo</th></tr></thead><tbody>`;
   let ef = 0, contr = 0;
   for (const p of list) {
@@ -372,10 +406,10 @@ function gridHtml(list) {
     ef += st.ef; contr += st.contr;
     h += `<tr data-k="${esc(p.k)}"><th class="name" scope="row"><button data-person="${esc(p.k)}" title="Ver o mês de ${esc(p.nome)}"><b>${esc(p.nome)}</b><small>${hrs(p.h)} h · ${esc(p.cc || "sem local")}</small></button></th>`;
     for (let day = 1; day <= n; day++) {
-      const wd = wdOf(S.ym, day), we = wd === 0 || wd === 6 ? " we" : "";
+      const wd = wdOf(S.ym, day), fer = feriado(S.ym, day), we = (wd === 0 || wd === 6 ? " we" : "") + (fer ? " fer" : "");
       if (!r || day < r[0] || day > r[1]) { h += `<td class="off${we}" title="Fora do período de contrato"></td>`; continue; }
-      const e = entry(d[day]);
-      h += `<td class="cell${we}" data-d="${day}"${e ? ` title="${esc(describe(e))}"` : ""}>${pills(e)}</td>`;
+      const e = entry(d[day]), tip = [fer && "Feriado: " + fer, describe(e)].filter(Boolean).join(" · ");
+      h += `<td class="cell${we}" data-d="${day}"${tip ? ` title="${esc(tip)}"` : ""}>${pills(e)}</td>`;
     }
     h += `<td class="fte"><b>${nf(st.ef)}</b><small>de ${nf(st.contr)}</small></td></tr>`;
   }
@@ -441,8 +475,9 @@ function openPerson(k) {
   const t = todayIso(), lead = (new Date(y, m - 1, 1).getDay() + 6) % 7, cw = canWrite();
   let cal = ["S", "T", "Q", "Q", "S", "S", "D"].map(w => `<span class="cw">${w}</span>`).join("") + "<span></span>".repeat(lead);
   for (let day = 1; day <= n; day++) {
-    const wd = wdOf(S.ym, day), on = r && day >= r[0] && day <= r[1], e = entry(d[day]);
-    cal += `<button type="button" class="cday${wd === 0 || wd === 6 ? " we" : ""}${iso(y, m, day) === t ? " today" : ""}" data-act="day" data-d="${day}"${on && cw ? "" : " disabled"} aria-label="${day}${e ? ": " + esc(describe(e)) : ""}" title="${esc(describe(e))}"><b>${day}</b>${pills(e, 2)}</button>`;
+    const wd = wdOf(S.ym, day), on = r && day >= r[0] && day <= r[1], e = entry(d[day]), fer = feriado(S.ym, day);
+    const tip = [fer && "Feriado: " + fer, describe(e)].filter(Boolean).join(" · ");
+    cal += `<button type="button" class="cday${wd === 0 || wd === 6 ? " we" : ""}${fer ? " fer" : ""}${iso(y, m, day) === t ? " today" : ""}" data-act="day" data-d="${day}"${on && cw ? "" : " disabled"} aria-label="${day}${tip ? ": " + esc(tip) : ""}" title="${esc(tip)}"><b>${day}</b>${pills(e, 2)}</button>`;
   }
   const lines = [];
   for (const x of CODES) if (st.counts[x.c]) lines.push(`<span class="pill k-${x.c}">${x.c}</span> ${st.counts[x.c]} ${st.counts[x.c] === 1 ? "dia" : "dias"}`);
@@ -530,6 +565,7 @@ function openNovo(k, back) {
         <optgroup label="Horas">${HF.map(h => `<option value="h:${h.f}">${h.name}</option>`).join("")}</optgroup></select></label>
       <div class="two"><label class="fld">De<input type="date" id="nr-a" min="${first}" max="${last}" value="${def}"></label><label class="fld">Até<input type="date" id="nr-b" min="${first}" max="${last}" value="${def}"></label></div>
       <label class="fld" id="nr-hw" hidden>Horas em cada dia<input id="nr-h" type="number" inputmode="decimal" min="0.25" step="0.25" value="1"></label>
+      <label class="check"><input type="checkbox" id="nr-skip" checked> Não contar dias de descanso (D) nem feriados</label>
       <label class="check"><input type="checkbox" id="nr-wk"> Só dias úteis (segunda a sexta)</label>
       <p class="hint">Só dentro de ${esc(ymLabel(S.ym))}. Para outro mês, mude o mês no topo.</p>
       <p class="msg" id="nr-msg"></p>
@@ -537,27 +573,29 @@ function openNovo(k, back) {
     <footer class="sh-foot"><span class="spacer"></span><button class="btn" data-act="${back ? "back" : "close"}">Cancelar</button><button class="btn primary" data-act="save">Guardar</button></footer>
   </div>`, {
     input(e) {
-      if (e.target.id === "nr-t") $("nr-hw").hidden = !e.target.value.startsWith("h:");
+      if (e.target.id === "nr-t") { $("nr-hw").hidden = !e.target.value.startsWith("h:"); $("nr-skip").checked = e.target.value === "F"; }
       if (e.target.id === "nr-a" && $("nr-b").value < e.target.value) $("nr-b").value = e.target.value;
     },
     act(a) {
       if (a === "close") return closeDlg();
       if (a === "back") return back();
       if (a !== "save") return;
-      const kk = $("nr-k").value, tp = $("nr-t").value, da = $("nr-a").value, db = $("nr-b").value, wk = $("nr-wk").checked;
+      const kk = $("nr-k").value, tp = $("nr-t").value, da = $("nr-a").value, db = $("nr-b").value, wk = $("nr-wk").checked, skip = $("nr-skip").checked;
       const msg = (c, t) => { const el = $("nr-msg"); el.className = "msg " + c; el.textContent = t; };
       if (!kk) return msg("bad", "Escolha o colaborador.");
       if (!da || !db || da < first || db > last) return msg("bad", "As datas têm de estar dentro de " + ymLabel(S.ym) + ".");
       if (db < da) return msg("bad", "A data final é anterior à inicial.");
-      const p = staffBy(kk), r = activeRange(p, S.ym);
+      const p = staffBy(kk), r = activeRange(p, S.ym), dd = marksD(kk);
       const days = [];
+      let skipped = 0;
       for (let day = +da.slice(8); day <= +db.slice(8); day++) {
-        const wd = wdOf(S.ym, day);
+        const wd = wdOf(S.ym, day), cur = entry(dd[day]);
         if (wk && (wd === 0 || wd === 6)) continue;
         if (!r || day < r[0] || day > r[1]) continue;
+        if (skip && (feriado(S.ym, day) || (cur && cur.c === "D"))) { skipped++; continue; }
         days.push(day);
       }
-      if (!days.length) return msg("bad", "Nenhum desses dias está dentro do contrato desta pessoa.");
+      if (!days.length) return msg("bad", skipped ? "Todos esses dias são descanso ou feriado." : "Nenhum desses dias está dentro do contrato desta pessoa.");
       let what;
       if (tp.startsWith("h:")) {
         const f = tp.slice(2), v = parseNum($("nr-h").value);
@@ -568,7 +606,7 @@ function openNovo(k, back) {
         applyDays(kk, days, old => Object.assign({}, old || {}, { c: tp }));
         what = CODE[tp].name;
       }
-      toast(`${what} · ${days.length} ${days.length === 1 ? "dia" : "dias"} · ${p.nome}`);
+      toast(`${what} · ${days.length} ${days.length === 1 ? "dia" : "dias"} · ${p.nome}` + (skipped ? ` (${skipped} descanso/feriado não contado${skipped === 1 ? "" : "s"})` : ""));
       return back ? back() : closeDlg();
     }
   });
@@ -580,7 +618,7 @@ function renderResumo() {
   const el = $("r-content");
   $("r-eyebrow").textContent = S.cc || "Todos os locais";
   if (S.staff === null) { el.innerHTML = '<div class="card empty">A carregar…</div>'; return; }
-  const staff = S.staff.filter(ccOk);
+  const staff = S.staff.filter(inScope);
   if (!staff.length) { el.innerHTML = emptyMonthHtml(); return; }
   const { by, T } = aggregate(staff, S.ym, S.marks), keys = Object.keys(by).sort((a, b) => a.localeCompare(b, "pt"));
   const used = CODES.filter(x => keys.some(k => by[k].counts[x.c]));
@@ -603,7 +641,7 @@ function exportCsv() {
   const q = s => '"' + String(s ?? "").replace(/"/g, '""') + '"';
   const head = ["Nº", "Nome", "Local", "Horas sem.", "Dias sem.", "Admissão", "Saída"].concat(Array.from({ length: n }, (_, i) => String(i + 1)), CODES.map(x => x.c), ["Atraso h", "Extra h", "Noturnas h", "FTE contratado", "FTE ativo"]);
   const lines = [head.map(q).join(sep)];
-  for (const p of (S.staff || []).filter(ccOk)) {
+  for (const p of (S.staff || []).filter(inScope)) {
     const st = stats(p, S.ym, S.marks), d = marksD(p.k);
     const days = Array.from({ length: n }, (_, i) => csvDay(entry(d[i + 1])));
     lines.push([p.n, p.nome, p.cc, num(Number(p.h) || 0), p.d, p.adm, p.sai].map(q).concat(days.map(q), CODES.map(x => st.counts[x.c]), [num(st.at), num(st.ex), num(st.hn), num(st.contr), num(st.ef)]).join(sep));
@@ -624,7 +662,7 @@ $("loadyear").addEventListener("click", async () => {
     for (let m = 1; m <= 12; m++) {
       const ym = y + "-" + pad(m), md = await S.store.getMonth(ym);
       if (!md) continue;
-      const staff = (md.staff || []).filter(ccOk), marks = await S.store.getMarks(ym);
+      const staff = (md.staff || []).filter(inScope), marks = await S.store.getMarks(ym, mine());
       res[m] = aggregate(staff, ym, marks).by; Object.keys(res[m]).forEach(k => all.add(k));
     }
     const keys = [...all].sort((a, b) => a.localeCompare(b, "pt"));
@@ -803,22 +841,52 @@ $("savestaff").addEventListener("click", async () => {
 });
 
 // ======================================================= ACESSOS
+const knownLocais = () => [...new Set((S.staff || []).map(p => p.cc).concat(...S.access.map(a => a.locais || [])).filter(Boolean))].sort((a, b) => a.localeCompare(b, "pt"));
+const chipsHtml = (name, sel) => {
+  const all = knownLocais();
+  return all.length ? all.map(c => `<label class="chip-check"><input type="checkbox" name="${name}" value="${esc(c)}"${sel.includes(c) ? " checked" : ""}>${esc(c)}</label>`).join("")
+    : '<span class="muted">Ainda não há locais: carregue primeiro o quadro de pessoal deste mês.</span>';
+};
+const checkedIn = (root, name) => [...root.querySelectorAll(`input[name="${name}"]:checked`)].map(i => i.value);
+const locaisTxt = l => l && l.length ? l.join(", ") : "Todos";
 function renderAcessos() {
   if (!S.unsubAccess) S.unsubAccess = S.store.watchAccess(list => { S.access = list; if (S.tab === "acessos") renderAccessList(); }, onSubErr);
   renderAccessList();
 }
 function renderAccessList() {
+  const box = $("acc-locais"), keep = checkedIn(box, "acc-loc");
+  box.innerHTML = chipsHtml("acc-loc", keep);
   const list = S.access.slice().sort((a, b) => a.email.localeCompare(b.email));
-  $("acclist").innerHTML = '<thead><tr><th>Email</th><th>Pode…</th><th></th></tr></thead><tbody>' +
-    `<tr><td>${esc(S.user.email)}</td><td>Acesso total (responsável)</td><td></td></tr>` +
-    list.filter(a => a.email !== String(S.user.email).toLowerCase()).map(a => `<tr><td>${esc(a.email)}</td><td><select data-role="${esc(a.email)}" aria-label="Permissão de ${esc(a.email)}"><option value="gerente"${a.role === "gerente" ? " selected" : ""}>Marcar ausências e horas</option><option value="leitura"${a.role === "leitura" ? " selected" : ""}>Só consultar</option></select></td><td><button class="btn small danger" data-revoke="${esc(a.email)}">Retirar acesso</button></td></tr>`).join("") +
+  $("acclist").innerHTML = '<thead><tr><th>Email</th><th>Pode…</th><th>Locais</th><th></th></tr></thead><tbody>' +
+    `<tr><td>${esc(S.user.email)}</td><td>Acesso total (responsável)</td><td>Todos</td><td></td></tr>` +
+    list.filter(a => a.email !== String(S.user.email).toLowerCase()).map(a => `<tr><td>${esc(a.email)}</td>` +
+      `<td><select data-role="${esc(a.email)}" aria-label="Permissão de ${esc(a.email)}"><option value="gerente"${a.role === "gerente" ? " selected" : ""}>Marcar ausências e horas</option><option value="leitura"${a.role === "leitura" ? " selected" : ""}>Só consultar</option></select></td>` +
+      `<td><button class="btn small" data-locais="${esc(a.email)}" title="Alterar locais">${esc(locaisTxt(a.locais))} ✎</button></td>` +
+      `<td><button class="btn small danger" data-revoke="${esc(a.email)}">Retirar acesso</button></td></tr>`).join("") +
     "</tbody>";
+}
+function openLocais(email) {
+  const a = S.access.find(x => x.email === email); if (!a) return;
+  openDlg(`<div class="sheet">
+    <header class="sh-head"><div><b>Locais de ${esc(email)}</b><small>Nenhum escolhido = vê todos os locais</small></div><button class="x" data-act="close" aria-label="Fechar">✕</button></header>
+    <div class="sh-body"><div class="chips">${chipsHtml("dl-loc", a.locais || [])}</div></div>
+    <footer class="sh-foot"><span class="spacer"></span><button class="btn" data-act="close">Cancelar</button><button class="btn primary" data-act="save">Guardar</button></footer>
+  </div>`, {
+    async act(act) {
+      if (act === "close") return closeDlg();
+      if (act !== "save") return;
+      const locais = checkedIn(dlg, "dl-loc");
+      try { await S.store.setAccess(email, { locais }); toast("Locais de " + email + ": " + locaisTxt(locais) + "."); closeDlg(); }
+      catch (err) { toast(errMsg(err)); }
+    }
+  });
 }
 $("acclist").addEventListener("change", async e => {
   const s = e.target.closest("[data-role]"); if (!s) return;
-  try { await S.store.setAccess(s.dataset.role, s.value); toast("Permissão atualizada."); } catch (err) { toast(errMsg(err)); }
+  try { await S.store.setAccess(s.dataset.role, { role: s.value }); toast("Permissão atualizada."); } catch (err) { toast(errMsg(err)); }
 });
 $("acclist").addEventListener("click", async e => {
+  const l = e.target.closest("[data-locais]"); if (l) return openLocais(l.dataset.locais);
   const b = e.target.closest("[data-revoke]"); if (!b) return;
   if (b.dataset.confirm !== "1") { b.dataset.confirm = "1"; b.textContent = "Confirmar"; return; }
   try { await S.store.deleteAccess(b.dataset.revoke); toast("Acesso retirado."); } catch (err) { toast(errMsg(err)); }
@@ -827,6 +895,7 @@ $("acc-exists").addEventListener("change", e => { $("acc-pw").disabled = e.targe
 $("accform").addEventListener("submit", async e => {
   e.preventDefault();
   const email = $("acc-email").value.trim().toLowerCase(), role = $("acc-role").value, pw = $("acc-pw").value, exists = $("acc-exists").checked;
+  const locais = checkedIn($("acc-locais"), "acc-loc");
   if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return setMsg("accmsg", "bad", "Email inválido.");
   if (!exists && pw.length < 6) return setMsg("accmsg", "bad", "A palavra-passe provisória precisa de pelo menos 6 caracteres.");
   setMsg("accmsg", "", "A criar…");
@@ -836,9 +905,10 @@ $("accform").addEventListener("submit", async e => {
       try { await S.store.createUser(email, pw); }
       catch (err) { if (String(err.code).includes("email-already-in-use")) note = " A conta já existia: a palavra-passe não foi alterada."; else throw err; }
     }
-    await S.store.setAccess(email, role);
-    setMsg("accmsg", "ok", "Acesso dado a " + email + "." + note + (exists || note ? "" : " Envie-lhe o link do site e a palavra-passe provisória."));
+    await S.store.setAccess(email, { role, locais });
+    setMsg("accmsg", "ok", "Acesso dado a " + email + " (locais: " + locaisTxt(locais) + ")." + note + (exists || note ? "" : " Envie-lhe o link do site e a palavra-passe provisória."));
     $("acc-email").value = ""; $("acc-pw").value = "";
+    $("acc-locais").querySelectorAll("input").forEach(i => i.checked = false);
   } catch (err) {
     const c = String(err.code || "");
     setMsg("accmsg", "bad", c.includes("weak-password") ? "Palavra-passe demasiado fraca." : c.includes("operation-not-allowed") ? "Ative o login por email/palavra-passe no Firebase (ver LEIAME)." : "Não foi possível: " + errMsg(err));

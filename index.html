@@ -147,12 +147,13 @@
       <h2 class="title">Acessos</h2>
       <p class="sub">Quem pode entrar no Mapa FTE e o que pode fazer.</p>
       <div class="card">
-        <div class="card-head"><div><h3>Dar acesso a um gerente</h3><p>Crie a conta com uma palavra-passe provisória e envie ao gerente o link do site, o email e a palavra-passe. Ele pode trocá-la em “Esqueci-me da palavra-passe”.</p></div></div>
+        <div class="card-head"><div><h3>Dar acesso a um gerente</h3><p>Crie a conta com uma palavra-passe provisória e envie ao gerente o link do site, o email e a palavra-passe. Ele pode trocá-la em “Esqueci-me da palavra-passe”. Escolha os locais dele para que só veja as ausências da sua equipa.</p></div></div>
         <form class="card-pad grid-form" id="accform">
           <label class="fld">Email<input type="email" id="acc-email" required autocomplete="off"></label>
           <label class="fld">Pode…<select id="acc-role"><option value="gerente">Marcar ausências e horas</option><option value="leitura">Só consultar</option></select></label>
           <label class="fld">Palavra-passe provisória<input type="text" id="acc-pw" minlength="6" placeholder="mín. 6 caracteres" autocomplete="off"></label>
           <div class="fld-btn"><button class="btn primary" type="submit">Dar acesso</button></div>
+          <div class="fld full"><span>Locais que pode ver e marcar <small class="muted">— nenhum escolhido = todos</small></span><div class="chips" id="acc-locais"></div></div>
           <label class="check full"><input type="checkbox" id="acc-exists"> A pessoa já tem conta (não criar palavra-passe)</label>
           <p class="msg full" id="accmsg" role="status"></p>
         </form>
