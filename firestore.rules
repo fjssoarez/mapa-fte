@@ -1,0 +1,32 @@
+rules_version = '2';
+// Regras de segurança do Mapa FTE.
+// Copie TUDO isto para Firebase → Firestore Database → Regras → Publicar.
+// A lista de emails em isAdmin() tem de ser igual à ADMINS de config.js.
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() { return request.auth != null && request.auth.token.email != null; }
+    function email() { return request.auth.token.email.lower(); }
+    function isAdmin() { return signedIn() && email() in ['fjsoarez@gmail.com', 'fabio.soares@areas.com']; }
+    function hasAccess() { return isAdmin() || (signedIn() && exists(/databases/$(database)/documents/acessos/$(email()))); }
+    function canMark() {
+      return isAdmin() || (signedIn() && exists(/databases/$(database)/documents/acessos/$(email()))
+        && get(/databases/$(database)/documents/acessos/$(email())).data.role == 'gerente');
+    }
+
+    // Quadro de pessoal de cada mês: só a responsável altera.
+    match /meses/{ym} {
+      allow read: if hasAccess();
+      allow write: if isAdmin();
+    }
+    // Marcações (ausências e horas): gerentes e responsável.
+    match /marcacoes/{id} {
+      allow read: if hasAccess();
+      allow write: if canMark();
+    }
+    // Lista de quem tem acesso: só a responsável gere; cada um lê o seu.
+    match /acessos/{e} {
+      allow read: if isAdmin() || (signedIn() && e == email());
+      allow write: if isAdmin();
+    }
+  }
+}

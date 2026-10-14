@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="pt-PT">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#14325c">
+<meta name="robots" content="noindex">
+<title>Mapa FTE</title>
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon.svg">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<div id="boot" class="center"><div class="logo big">FT</div><p class="muted">A abrir…</p></div>
+
+<!-- ============ LOGIN ============ -->
+<div id="login" class="center" hidden>
+  <form class="login-card" id="loginform" novalidate>
+    <div class="logo big">FT</div>
+    <h1>Mapa FTE</h1>
+    <p class="muted org"></p>
+    <label class="fld">Email<input type="email" id="lemail" autocomplete="username" inputmode="email" required></label>
+    <label class="fld">Palavra-passe<input type="password" id="lpass" autocomplete="current-password" required></label>
+    <button class="btn primary wide" type="submit" id="lbtn">Entrar</button>
+    <button class="linkbtn" type="button" id="forgot">Esqueci-me da palavra-passe</button>
+    <p class="msg" id="lmsg" role="status"></p>
+  </form>
+</div>
+
+<div id="noaccess" class="center" hidden>
+  <div class="login-card">
+    <div class="logo big">FT</div>
+    <h1>Sem acesso</h1>
+    <p class="muted">A conta <b id="naemail"></b> ainda não tem acesso ao Mapa FTE. Peça à responsável para o autorizar.</p>
+    <button class="btn wide" id="nalogout">Sair</button>
+  </div>
+</div>
+
+<!-- ============ APP ============ -->
+<div id="main" hidden>
+  <header class="top">
+    <div class="wrap">
+      <div class="top-row">
+        <div class="brand"><div class="logo">FT</div><div><b>Mapa FTE</b><small class="org"></small></div></div>
+        <div class="top-right">
+          <span class="save" id="save" role="status"><i></i><span>Tudo guardado</span></span>
+          <details class="usr" id="usr">
+            <summary aria-label="Conta" id="usrinit">?</summary>
+            <div class="menu"><b id="usremail"></b><small id="usrrole"></small><button class="btn small wide" id="logout">Sair</button></div>
+          </details>
+        </div>
+      </div>
+      <div class="toolbar">
+        <div class="month" role="group" aria-label="Mês">
+          <button id="prev" aria-label="Mês anterior">‹</button>
+          <span id="mlabel">—</span>
+          <button id="next" aria-label="Mês seguinte">›</button>
+        </div>
+        <select id="cc" aria-label="Local"><option value="">Todos os locais</option></select>
+        <input id="q" type="search" placeholder="Procurar colaborador" aria-label="Procurar colaborador" autocomplete="off">
+        <button class="btn accent" id="newrec"><span aria-hidden="true">+</span> Novo registo</button>
+      </div>
+      <nav class="tabs" role="tablist">
+        <button role="tab" data-tab="mapa">Mapa mensal</button>
+        <button role="tab" data-tab="resumo">Resumo</button>
+        <button role="tab" data-tab="quadro" data-admin>Quadro de pessoal</button>
+        <button role="tab" data-tab="acessos" data-admin data-fb>Acessos</button>
+      </nav>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <div id="banner"></div>
+
+    <!-- MAPA -->
+    <section id="v-mapa">
+      <div class="eyebrow" id="eyebrow">Todos os locais</div>
+      <h2 class="title">Mapa mensal da equipa</h2>
+      <p class="sub" id="mapsub">Registe ausências e horas. As alterações são guardadas automaticamente.</p>
+      <div id="mapcontent"></div>
+    </section>
+
+    <!-- RESUMO -->
+    <section id="v-resumo" hidden>
+      <div class="eyebrow" id="r-eyebrow">Todos os locais</div>
+      <h2 class="title">Resumo do mês</h2>
+      <p class="sub">Capacidade por local e motivos de indisponibilidade.</p>
+      <div id="r-content"></div>
+      <div class="card">
+        <div class="card-head"><div><h3>FTE ativo ao longo do ano</h3><p>Lê todos os meses do ano que têm quadro de pessoal.</p></div>
+          <button class="btn" id="loadyear">Calcular o ano</button></div>
+        <p class="msg pad-x" id="yearmsg"></p>
+        <div class="tablewrap"><table class="sum" id="sumyear"></table></div>
+      </div>
+      <details class="card help">
+        <summary>Como é feito o cálculo?</summary>
+        <div class="card-pad">
+          <p><b>FTE contratado</b> = horas semanais ÷ 40, proporcional aos dias do mês em que a pessoa está contratada (admissão ou saída a meio do mês contam só os dias ativos).</p>
+          <p><b>FTE ativo</b> = FTE contratado − (dias de ausência × horas por dia + horas de atraso) ÷ 173,33 h. Horas por dia = horas semanais ÷ dias por semana.</p>
+          <p>Contam como ausência: Férias, Baixa médica, Acidente de trabalho, Licença, Faltas, Formação e Licença sem vencimento. <b>Descanso (D)</b>, <b>horas extra</b> e <b>horas noturnas</b> ficam registados mas não alteram o FTE.</p>
+        </div>
+      </details>
+    </section>
+
+    <!-- QUADRO -->
+    <section id="v-quadro" hidden>
+      <div class="eyebrow">Responsável</div>
+      <h2 class="title">Quadro de pessoal</h2>
+      <p class="sub">Lista de colaboradores do mês escolhido em cima.</p>
+      <div class="card">
+        <div class="card-head"><div><h3>1. Colar o ficheiro do RH</h3><p>No Excel, selecione a tabela <b>incluindo a linha de títulos</b> (Nº, Nome, Centro de custo, Dt admissão, Dias, Horas…), copie com Ctrl+C e cole aqui.</p></div></div>
+        <div class="card-pad stack">
+          <textarea id="paste" placeholder="Cole aqui (Ctrl+V)"></textarea>
+          <div class="row">
+            <button class="btn" id="parse">Analisar</button>
+            <button class="btn primary" id="doimport" disabled>Importar</button>
+            <span class="msg" id="pmsg" role="status"></span>
+          </div>
+          <div class="tablewrap" id="preview"></div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-head"><div><h3>Outras opções</h3><p>As marcações já feitas mantêm-se para quem continuar na lista.</p></div></div>
+        <div class="card-pad row">
+          <button class="btn" data-run="copyprev">Copiar quadro do mês anterior</button>
+          <button class="btn" data-run="example">Carregar dados de exemplo</button>
+          <span id="delwrap"><button class="btn danger" id="delmonth">Apagar este mês</button></span>
+          <span class="msg" id="omsg" role="status"></span>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-head"><div><h3>Pessoas deste mês</h3><p>Corrija horas, dias por semana ou datas. Uma saída a meio do mês faz o FTE contar só até esse dia.</p></div>
+          <div class="row"><button class="btn" id="addrow">+ Adicionar pessoa</button><button class="btn primary" id="savestaff" disabled>Guardar alterações</button></div></div>
+        <p class="msg pad-x" id="smsg" role="status"></p>
+        <div class="tablewrap"><table class="sum edit" id="staffedit"></table></div>
+      </div>
+    </section>
+
+    <!-- ACESSOS -->
+    <section id="v-acessos" hidden>
+      <div class="eyebrow">Responsável</div>
+      <h2 class="title">Acessos</h2>
+      <p class="sub">Quem pode entrar no Mapa FTE e o que pode fazer.</p>
+      <div class="card">
+        <div class="card-head"><div><h3>Dar acesso a um gerente</h3><p>Crie a conta com uma palavra-passe provisória e envie ao gerente o link do site, o email e a palavra-passe. Ele pode trocá-la em “Esqueci-me da palavra-passe”.</p></div></div>
+        <form class="card-pad grid-form" id="accform">
+          <label class="fld">Email<input type="email" id="acc-email" required autocomplete="off"></label>
+          <label class="fld">Pode…<select id="acc-role"><option value="gerente">Marcar ausências e horas</option><option value="leitura">Só consultar</option></select></label>
+          <label class="fld">Palavra-passe provisória<input type="text" id="acc-pw" minlength="6" placeholder="mín. 6 caracteres" autocomplete="off"></label>
+          <div class="fld-btn"><button class="btn primary" type="submit">Dar acesso</button></div>
+          <label class="check full"><input type="checkbox" id="acc-exists"> A pessoa já tem conta (não criar palavra-passe)</label>
+          <p class="msg full" id="accmsg" role="status"></p>
+        </form>
+      </div>
+      <div class="card">
+        <div class="card-head"><div><h3>Pessoas com acesso</h3></div></div>
+        <div class="tablewrap"><table class="sum" id="acclist"></table></div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<dialog id="dlg" aria-label="Detalhe"></dialog>
+<div id="toast" role="status" aria-live="polite"></div>
+
+<script type="module" src="app.js"></script>
+</body>
+</html>
